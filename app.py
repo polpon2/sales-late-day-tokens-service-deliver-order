@@ -16,9 +16,6 @@ async def process_message(
 
         # Manage Inventory.
         async with SessionLocal() as db:
-            pass
-
-            await db.commit()
             is_created = await crud.create_inventory(db=db, username=username, amount=amount,status="SUCCESS")
             if (is_created):
                 routing_key = "from.deliver"
@@ -30,6 +27,7 @@ async def process_message(
                     routing_key=routing_key,
                 )
                 print(f"update inventory success")
+                await db.commit()
             else:
                 print(f"roll back")
 
