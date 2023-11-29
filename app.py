@@ -1,4 +1,6 @@
 import asyncio, aio_pika, json
+from async_timeout import timeout
+from asyncio import TimeoutError
 from db.engine import SessionLocal, engine
 from db import crud, models
 
@@ -7,47 +9,60 @@ async def process_message(
     connection: aio_pika.Connection,  # Add connection parameter
 ) -> None:
     async with message.process():
-        body: dict = json.loads(message.body)
+        try:
+            async with timeout(1.5):
+                body: dict = json.loads(message.body)
 
-        username: str = body['username']
-        amount: int = body['amount']
+                username: str = body['username']
+                amount: int = body['amount']
 
-        print(f" [x] Received {body}")
+                print(f" [x] Received {body}")
 
-        # Manage Inventory.
-        async with SessionLocal() as db:
-            is_created = await crud.create_inventory(db=db, username=username, amount=amount, status="SUCCESS")
-            if (is_created):
-                routing_key = "from.deliver"
+                # Manage Inventory.
+                async with SessionLocal() as db:
+                    is_created = await crud.create_inventory(db=db, username=username, amount=amount, status="SUCCESS")
+                    if (is_created):
+                        routing_key = "from.deliver"
 
-                channel = await connection.channel()
+                        channel = await connection.channel()
 
-                body['deliver_number'] = is_created.id
+                        body['deliver_number'] = is_created.id
 
-                await channel.default_exchange.publish(
-                    aio_pika.Message(body=bytes(json.dumps(body), 'utf-8')),
-                    routing_key=routing_key,
-                )
-                print(f"update inventory success")
-                await db.commit()
-            else:
-                await process_rb_status(message=message, connection=connection)
+                        await channel.default_exchange.publish(
+                            aio_pika.Message(body=bytes(json.dumps(body), 'utf-8')),
+                            routing_key=routing_key,
+                        )
+                        print(f"update inventory success")
+                        await db.commit()
+                    else:
+                        await process_rb_status(message=message, connection=connection)
+        except TimeoutError:
+            # Roll Back from Timed Out
+            await process_rb_status(message=message, connection=connection, status="TIMEOUT")
+            print("Timed Out Rolling Back....")
+        except Exception as e:
+            await process_rb_status(message=message, connection=connection)
+            print(f"Error: {e}, Rolling Back...")
 
 
 async def process_rb_status(
     message: aio_pika.abc.AbstractIncomingMessage,
     connection: aio_pika.Connection,  # Add connection parameter
+    status: str | None = None
 ) -> None:
     body: dict = json.loads(message.body)
 
     print(f" [x] Rolling Back {body}")
+
+    if status is not None:
+        body["status"] = status
 
     # from Insufficient Inventory
     channel = await connection.channel()
 
     # status will be "UNKNOWN", like how do you even die if its only 1 write in the db??
     await channel.default_exchange.publish(
-        aio_pika.Message(body=message.body),
+        aio_pika.Message(body=bytes(json.dumps(body), 'utf-8')),
         routing_key="rb.inventory",
     )
 

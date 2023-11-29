@@ -15,6 +15,7 @@ pymysql = "^1.1.0"
 aio-pika = "^9.3.1"
 asyncio = "^3.4.3"
 asyncmy = "^0.2.8"
+async-timeout = "^4.0.3"
 
 
 [build-system]
