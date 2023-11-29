@@ -16,7 +16,7 @@ async def process_message(
 
         # Manage Inventory.
         async with SessionLocal() as db:
-            is_created = await crud.create_inventory(db=db, username=username, amount=amount,status="SUCCESS")
+            is_created = await crud.create_inventory(db=db, username=username, amount=amount, status="SUCCESS")
             if (is_created):
                 routing_key = "from.deliver"
 
@@ -29,9 +29,26 @@ async def process_message(
                 print(f"update inventory success")
                 await db.commit()
             else:
+                await process_rb_status(message=message, connection=connection)
                 print(f"roll back")
 
 
+async def process_rb_status(
+    message: aio_pika.abc.AbstractIncomingMessage,
+    connection: aio_pika.Connection,  # Add connection parameter
+) -> None:
+    body: dict = json.loads(message.body)
+
+    print(f" [x] Rolling Back {body}")
+
+    # from Insufficient Inventory
+    channel = await connection.channel()
+
+    # status will be "UNKNOWN", like how do you even die if its only 1 write in the db??
+    await channel.default_exchange.publish(
+        aio_pika.Message(body=message.body),
+        routing_key="rb.inventory",
+    )
 
 
 async def main() -> None:
