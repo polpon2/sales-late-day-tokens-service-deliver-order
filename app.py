@@ -32,6 +32,14 @@ async def process_message(
                 username: str = body['username']
                 amount: int = body['amount']
 
+                kill_delivery: bool = body['kill_deliver']
+                timeout_delivery: bool = body['timeout_deliver']
+
+                if kill_delivery:
+                    raise Exception("Forced Kill Deliver")
+                elif timeout_delivery:
+                    await asyncio.sleep(5)
+
                 print(f" [x] Received {body}")
 
                 # Manage Inventory.
